@@ -34,7 +34,20 @@ def download_audio_from_url(url: str) -> str:
             'preferredquality': '192',
         }],
         'quiet': True,
-        'no_warnings': True
+        'no_warnings': True,
+        'extract_flat': False,
+        'ignoreerrors': True,
+        'no_check_certificate': True,
+        'prefer_insecure': True,
+        'retries': 10,
+        'fragment_retries': 10,
+        'skip_unavailable_fragments': True,
+        'extractor_args': {
+            'youtube': {
+                'skip': ['dash', 'hls'],
+                'player_skip': ['js', 'configs', 'webpage']
+            }
+        }
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
