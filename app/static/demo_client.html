@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Audio Transcription Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { padding: 2rem; background-color: #f8f9fa; }
+        #transcriptionResult { white-space: pre-wrap; background: #fff; padding: 1rem; border: 1px solid #dee2e6; border-radius: 0.5rem; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1 class="mb-4">Audio Transcription API Demo</h1>
+
+    <div class="mb-3">
+        <label for="baseUrl" class="form-label">API Base URL</label>
+        <input type="text" class="form-control" id="baseUrl" placeholder="https://your-server-domain/">
+    </div>
+    <div class="mb-3">
+        <label for="apiToken" class="form-label">API Token (optional)</label>
+        <input type="text" class="form-control" id="apiToken" placeholder="Your API token">
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Choose Input Method</label>
+        <select class="form-select" id="inputType">
+            <option value="file">Upload File</option>
+            <option value="url">From Video URL</option>
+        </select>
+    </div>
+
+    <div class="mb-3" id="fileInput">
+        <label for="file" class="form-label">Select audio/video file</label>
+        <input class="form-control" type="file" id="file">
+    </div>
+
+    <div class="mb-3 d-none" id="urlInput">
+        <label for="videoUrl" class="form-label">Enter video URL</label>
+        <input class="form-control" type="text" id="videoUrl" placeholder="https://www.youtube.com/watch?v=...">
+    </div>
+
+    <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" value="" id="forceCheck">
+        <label class="form-check-label" for="forceCheck">Force transcription</label>
+    </div>
+
+    <button class="btn btn-primary" id="processBtn">Process</button>
+
+    <hr class="my-4">
+
+    <h5>Transcription Result</h5>
+    <div id="transcriptionResult"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script>
+    const inputType = document.getElementById('inputType');
+    const fileInput = document.getElementById('fileInput');
+    const urlInput = document.getElementById('urlInput');
+
+    inputType.addEventListener('change', () => {
+        fileInput.classList.toggle('d-none', inputType.value !== 'file');
+        urlInput.classList.toggle('d-none', inputType.value !== 'url');
+    });
+
+    document.getElementById('processBtn').addEventListener('click', async () => {
+        const baseUrl = document.getElementById('baseUrl').value.trim();
+        const token = document.getElementById('apiToken').value.trim();
+        const force = document.getElementById('forceCheck').checked;
+        const headers = token ? { 'x-api-token': token } : {};
+
+        if (!baseUrl.startsWith('http')) {
+            alert('Please enter a valid base URL (must start with http or https).');
+            return;
+        }
+
+        let apiToken = null;
+        try {
+            if (inputType.value === 'file') {
+                const file = document.getElementById('file').files[0];
+                if (!file) {
+                    alert('Please select a file.');
+                    return;
+                }
+                const formData = new FormData();
+                formData.append('file', file);
+                const uploadRes = await axios.post(new URL('upload', baseUrl).href, formData, { headers });
+                apiToken = uploadRes.data.token;
+            } else {
+                const url = document.getElementById('videoUrl').value.trim();
+                if (!url) {
+                    alert('Please enter a video URL.');
+                    return;
+                }
+                const downloadRes = await axios.post(new URL('download', baseUrl).href, { url }, {
+                    headers,
+                    headers: { ...headers, 'Content-Type': 'application/json' }
+                });
+                apiToken = downloadRes.data.token;
+            }
+
+            const transcribeUrl = new URL(`transcribe/${apiToken}`, baseUrl);
+            if (force) transcribeUrl.searchParams.set('force', 'true');
+
+            const transcriptionRes = await axios.get(transcribeUrl.href, {
+                headers,
+                responseType: 'text'
+            });
+
+            const container = document.getElementById('transcriptionResult');
+            container.textContent = transcriptionRes.data;
+        } catch (err) {
+            console.error(err);
+            const msg = err?.response?.data || err?.message || 'Unknown error';
+            alert('Error: ' + msg);
+        }
+    });
+</script>
+</body>
+</html>

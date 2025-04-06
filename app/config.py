@@ -9,6 +9,7 @@ class Config(BaseSettings):
     openai_api_key: str = "sk-proj-1234567890"
     use_openai: bool = False
     master_api_token: str | None = None
+    setup_cors_middleware: bool = True
 
     class Config:
         env_file = ".env"
