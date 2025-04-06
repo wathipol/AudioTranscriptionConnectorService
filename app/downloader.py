@@ -75,29 +75,33 @@ def download_audio_from_url(url: str) -> str:
         'geo_verification_proxy': None,
         'socket_timeout': 30,
         'proxy': None,
+        'extract_flat': 'in_playlist',
+        'playlist_items': '1',
+        'no_playlist': True,
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            if not info:
-                raise ValueError("Could not extract video info")
-            
-            # Проверяем, что видео доступно
-            if info.get('is_live'):
-                raise ValueError("Live streams are not supported")
-            
-            # Скачиваем
-            ydl.download([url])
-            
-            # Проверяем, что файл создан
-            audio_file = output_dir / "audio.mp3"
-            if not audio_file.exists():
-                raise ValueError("Audio file was not created")
+            try:
+                info = ydl.extract_info(url, download=False)
+                if not info or isinstance(info, bool):
+                    raise ValueError("Could not extract video info")
                 
-            return token
+                if info.get('is_live'):
+                    raise ValueError("Live streams are not supported")
+                
+                ydl.download([url])
+                
+                audio_file = output_dir / "audio.mp3"
+                if not audio_file.exists():
+                    raise ValueError("Audio file was not created")
+                    
+                return token
+            except yt_dlp.utils.DownloadError as e:
+                raise ValueError(f"Download error: {str(e)}")
+            except Exception as e:
+                raise ValueError(f"Error processing video: {str(e)}")
     except Exception as e:
-        # Очищаем директорию в случае ошибки
         import shutil
         if output_dir.exists():
             shutil.rmtree(output_dir)
