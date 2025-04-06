@@ -62,7 +62,19 @@ def download_audio_from_url(url: str) -> str:
         'default_search': 'auto',
         'source_address': '0.0.0.0',
         'force_ipv4': True,
-        'cachedir': False
+        'cachedir': False,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+            'Sec-Fetch-Mode': 'navigate',
+        },
+        'geo_bypass': True,
+        'geo_bypass_country': 'US',
+        'geo_bypass_ip_block': True,
+        'geo_verification_proxy': None,
+        'socket_timeout': 30,
+        'proxy': None,
     }
 
     try:
