@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+python-multipart
+yt-dlp
+python-dotenv
+pydantic
+pydantic-settings
+loguru
+requests
+langchain
+langchain-openai
+langchain-groq
+langchain-mcp
+fastapi-mcp
+langchain-mcp-adapters

@@ -1,0 +1,82 @@
+# Copyright 2020 Pants project contributors.
+# Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+
+# System files
+.DS_Store
+
+# Pants workspace files
+/.pants.d/
+/dist
+/.pids
+/.pants.workdir.file_lock*
+
+# Python files
+__pycache__/
+*.pyc
+.venv/
+
+# Editors
+.vscode/
+.idea/
+*.iml
+*.code-workspace
+
+# yoyo-migrations config
+yoyo.ini
+yoyo_migrations.ini
+yoyo_grants.ini
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+.langgraph_api
+.deepeval_telemtry.txt
+mind_map.html
+test_mind_map.py
+lib/bindings/utils.js
+lib/tom-select/tom-select.complete.min.js
+lib/tom-select/tom-select.css
+lib/vis-9.1.2/vis-network.css
+lib/vis-9.1.2/vis-network.min.js
+
+
+lib/
+mlruns/
+
+
+sessions/*
+
+.env
+./data/*
+./data
+.env
+data/*
+data
+test_mcp.py
+runpod_example_response.json
