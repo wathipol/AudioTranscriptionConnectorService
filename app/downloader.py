@@ -47,13 +47,49 @@ def download_audio_from_url(url: str) -> str:
                 'skip': ['dash', 'hls'],
                 'player_skip': ['js', 'configs', 'webpage']
             }
-        }
+        },
+        'format_sort': ['ext:mp3:m4a', 'quality'],
+        'format': 'bestaudio[ext=mp3]/bestaudio[ext=m4a]/bestaudio',
+        'merge_output_format': 'mp3',
+        'audioformat': 'mp3',
+        'audioquality': '192',
+        'nocheckcertificate': True,
+        'no_warnings': True,
+        'ignoreerrors': True,
+        'logtostderr': False,
+        'quiet': True,
+        'no_warnings': True,
+        'default_search': 'auto',
+        'source_address': '0.0.0.0',
+        'force_ipv4': True,
+        'cachedir': False
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
-
-    return token
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if not info:
+                raise ValueError("Could not extract video info")
+            
+            # Проверяем, что видео доступно
+            if info.get('is_live'):
+                raise ValueError("Live streams are not supported")
+            
+            # Скачиваем
+            ydl.download([url])
+            
+            # Проверяем, что файл создан
+            audio_file = output_dir / "audio.mp3"
+            if not audio_file.exists():
+                raise ValueError("Audio file was not created")
+                
+            return token
+    except Exception as e:
+        # Очищаем директорию в случае ошибки
+        import shutil
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
+        raise ValueError(f"Failed to download audio: {str(e)}")
 
 
 def save_uploaded_file(file_data: bytes, filename: str) -> str:
