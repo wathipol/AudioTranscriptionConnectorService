@@ -7,51 +7,90 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { padding: 2rem; background-color: #f8f9fa; }
-        #transcriptionResult { white-space: pre-wrap; background: #fff; padding: 1rem; border: 1px solid #dee2e6; border-radius: 0.5rem; }
+        #transcriptionResult { 
+            white-space: pre-wrap; 
+            background: #fff; 
+            padding: 1rem; 
+            border: 1px solid #dee2e6; 
+            border-radius: 0.5rem;
+            min-height: 200px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .status-indicator {
+            display: none;
+            margin-top: 1rem;
+        }
+        .progress {
+            height: 20px;
+        }
+        .error-message {
+            color: #dc3545;
+            margin-top: 1rem;
+        }
     </style>
 </head>
 <body>
 <div class="container">
     <h1 class="mb-4">Audio Transcription API Demo</h1>
 
-    <div class="mb-3">
-        <label for="baseUrl" class="form-label">API Base URL</label>
-        <input type="text" class="form-control" id="baseUrl" placeholder="https://your-server-domain/">
-    </div>
-    <div class="mb-3">
-        <label for="apiToken" class="form-label">API Token (optional)</label>
-        <input type="text" class="form-control" id="apiToken" placeholder="Your API token">
-    </div>
-
-    <div class="mb-3">
-        <label class="form-label">Choose Input Method</label>
-        <select class="form-select" id="inputType">
-            <option value="file">Upload File</option>
-            <option value="url">From Video URL</option>
-        </select>
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">API Configuration</h5>
+            <div class="mb-3">
+                <label for="baseUrl" class="form-label">API Base URL</label>
+                <input type="text" class="form-control" id="baseUrl" placeholder="https://your-server-domain/" value="http://localhost:8000">
+            </div>
+            <div class="mb-3">
+                <label for="apiToken" class="form-label">API Token (optional)</label>
+                <input type="text" class="form-control" id="apiToken" placeholder="Your API token">
+            </div>
+        </div>
     </div>
 
-    <div class="mb-3" id="fileInput">
-        <label for="file" class="form-label">Select audio/video file</label>
-        <input class="form-control" type="file" id="file">
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Input Method</h5>
+            <div class="mb-3">
+                <label class="form-label">Choose Input Method</label>
+                <select class="form-select" id="inputType">
+                    <option value="file">Upload File</option>
+                    <option value="url">From Video URL</option>
+                </select>
+            </div>
+
+            <div class="mb-3" id="fileInput">
+                <label for="file" class="form-label">Select audio/video file</label>
+                <input class="form-control" type="file" id="file" accept="audio/*,video/*">
+            </div>
+
+            <div class="mb-3 d-none" id="urlInput">
+                <label for="videoUrl" class="form-label">Enter video URL</label>
+                <input class="form-control" type="text" id="videoUrl" placeholder="https://www.youtube.com/watch?v=...">
+            </div>
+
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" value="" id="forceCheck">
+                <label class="form-check-label" for="forceCheck">Force transcription</label>
+            </div>
+
+            <button class="btn btn-primary" id="processBtn">Process</button>
+        </div>
     </div>
 
-    <div class="mb-3 d-none" id="urlInput">
-        <label for="videoUrl" class="form-label">Enter video URL</label>
-        <input class="form-control" type="text" id="videoUrl" placeholder="https://www.youtube.com/watch?v=...">
+    <div class="card">
+        <div class="card-body">
+            <h5 class="card-title">Transcription Result</h5>
+            <div class="status-indicator" id="statusIndicator">
+                <div class="progress mb-2">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                </div>
+                <p class="text-muted mb-0" id="statusText">Processing...</p>
+            </div>
+            <div class="error-message" id="errorMessage"></div>
+            <div id="transcriptionResult"></div>
+        </div>
     </div>
-
-    <div class="form-check mb-3">
-        <input class="form-check-input" type="checkbox" value="" id="forceCheck">
-        <label class="form-check-label" for="forceCheck">Force transcription</label>
-    </div>
-
-    <button class="btn btn-primary" id="processBtn">Process</button>
-
-    <hr class="my-4">
-
-    <h5>Transcription Result</h5>
-    <div id="transcriptionResult"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -59,11 +98,67 @@
     const inputType = document.getElementById('inputType');
     const fileInput = document.getElementById('fileInput');
     const urlInput = document.getElementById('urlInput');
+    const statusIndicator = document.getElementById('statusIndicator');
+    const statusText = document.getElementById('statusText');
+    const errorMessage = document.getElementById('errorMessage');
+    const transcriptionResult = document.getElementById('transcriptionResult');
 
     inputType.addEventListener('change', () => {
         fileInput.classList.toggle('d-none', inputType.value !== 'file');
         urlInput.classList.toggle('d-none', inputType.value !== 'url');
     });
+
+    function showError(message, details = '') {
+        errorMessage.innerHTML = `
+            <div class="alert alert-danger">
+                <strong>Error:</strong> ${message}
+                ${details ? `<br><small class="text-muted">${details}</small>` : ''}
+            </div>
+        `;
+        errorMessage.style.display = 'block';
+        statusIndicator.style.display = 'none';
+    }
+
+    function showStatus(message) {
+        statusText.textContent = message;
+        statusIndicator.style.display = 'block';
+        errorMessage.style.display = 'none';
+    }
+
+    function clearStatus() {
+        statusIndicator.style.display = 'none';
+        errorMessage.style.display = 'none';
+    }
+
+    function getErrorMessage(error) {
+        if (error.response) {
+            const status = error.response.status;
+            const data = error.response.data;
+            
+            console.error('API Error:', {
+                status,
+                data,
+                headers: error.response.headers
+            });
+            
+            switch (status) {
+                case 422:
+                    return `Invalid input data: ${typeof data === 'object' ? JSON.stringify(data) : data}`;
+                case 413:
+                    return 'File is too large. Please try a smaller file.';
+                case 415:
+                    return 'Unsupported file type. Please use audio or video files.';
+                case 401:
+                    return 'Authentication required. Please check your API token.';
+                case 403:
+                    return 'Access denied. Please check your API token.';
+                default:
+                    return `Server error (${status}): ${typeof data === 'object' ? JSON.stringify(data) : data}`;
+            }
+        }
+        console.error('Network Error:', error);
+        return error.message || 'Unknown error occurred';
+    }
 
     document.getElementById('processBtn').addEventListener('click', async () => {
         const baseUrl = document.getElementById('baseUrl').value.trim();
@@ -72,49 +167,99 @@
         const headers = token ? { 'x-api-token': token } : {};
 
         if (!baseUrl.startsWith('http')) {
-            alert('Please enter a valid base URL (must start with http or https).');
+            showError('Please enter a valid base URL (must start with http or https).');
             return;
         }
 
-        let apiToken = null;
+        clearStatus();
+        showStatus('Processing request...');
+        transcriptionResult.textContent = '';
+
         try {
+            let apiToken = null;
             if (inputType.value === 'file') {
                 const file = document.getElementById('file').files[0];
                 if (!file) {
-                    alert('Please select a file.');
+                    showError('Please select a file.');
                     return;
                 }
+
+                // Validate file size (max 100MB)
+                if (file.size > 100 * 1024 * 1024) {
+                    showError('File is too large.', 'Maximum file size is 100MB.');
+                    return;
+                }
+
+                showStatus('Uploading file...');
                 const formData = new FormData();
                 formData.append('file', file);
-                const uploadRes = await axios.post(new URL('upload', baseUrl).href, formData, { headers });
-                apiToken = uploadRes.data.token;
+                
+                try {
+                    const uploadRes = await axios.post(new URL('upload', baseUrl).href, formData, { 
+                        headers,
+                        maxContentLength: 100 * 1024 * 1024,
+                        maxBodyLength: 100 * 1024 * 1024
+                    });
+                    apiToken = uploadRes.data.token;
+                } catch (error) {
+                    throw new Error(`Upload failed: ${getErrorMessage(error)}`);
+                }
             } else {
                 const url = document.getElementById('videoUrl').value.trim();
                 if (!url) {
-                    alert('Please enter a video URL.');
+                    showError('Please enter a video URL.');
                     return;
                 }
-                const downloadRes = await axios.post(new URL('download', baseUrl).href, { url }, {
-                    headers,
-                    headers: { ...headers, 'Content-Type': 'application/json' }
-                });
-                apiToken = downloadRes.data.token;
+
+                // Validate URL format
+                try {
+                    new URL(url);
+                } catch (e) {
+                    showError('Invalid URL format.', 'Please enter a valid URL starting with http:// or https://');
+                    return;
+                }
+
+                showStatus('Downloading video...');
+                try {
+                    // Попробуем отправить URL всеми возможными способами
+                    const downloadUrl = new URL('download', baseUrl);
+                    downloadUrl.searchParams.set('url', url);
+                    
+                    const downloadRes = await axios({
+                        method: 'post',
+                        url: downloadUrl.href,
+                        data: `url=${encodeURIComponent(url)}`,
+                        headers: {
+                            ...headers,
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        }
+                    });
+                    
+                    apiToken = downloadRes.data.token;
+                } catch (error) {
+                    console.error('Download error full details:', error);
+                    console.error('Download error response:', error.response?.data);
+                    throw new Error(`Download failed: ${getErrorMessage(error)}`);
+                }
             }
 
+            showStatus('Transcribing audio...');
             const transcribeUrl = new URL(`transcribe/${apiToken}`, baseUrl);
             if (force) transcribeUrl.searchParams.set('force', 'true');
 
-            const transcriptionRes = await axios.get(transcribeUrl.href, {
-                headers,
-                responseType: 'text'
-            });
-
-            const container = document.getElementById('transcriptionResult');
-            container.textContent = transcriptionRes.data;
+            try {
+                const transcriptionRes = await axios.get(transcribeUrl.href, {
+                    headers,
+                    responseType: 'text'
+                });
+                transcriptionResult.textContent = transcriptionRes.data;
+                clearStatus();
+            } catch (error) {
+                throw new Error(`Transcription failed: ${getErrorMessage(error)}`);
+            }
         } catch (err) {
             console.error(err);
-            const msg = err?.response?.data || err?.message || 'Unknown error';
-            alert('Error: ' + msg);
+            showError(err.message);
         }
     });
 </script>

@@ -22,7 +22,7 @@ def verify_api_token(x_api_token: str = Header(default=None), request: Request =
         raise HTTPException(status_code=403, detail="Forbidden: Invalid API token")
 
 
-app = FastAPI(dependencies=[Depends(lambda request: verify_api_token(request=request))])
+app = FastAPI(dependencies=[Depends(verify_api_token)])
 if config.setup_cors_middleware:
     app.add_middleware(
         CORSMiddleware,
