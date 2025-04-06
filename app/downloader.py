@@ -1,32 +1,45 @@
-import yt_dlp
 import uuid
+import shutil
+import logging
 from pathlib import Path
+from typing import Optional
+
+import yt_dlp
 import subprocess
-import mimetypes
+
 from app.config import config
 
+logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(config.data_dir)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-
 
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".mkv", ".mov"}
 
 
-def generate_token():
+def generate_token() -> str:
     return uuid.uuid4().hex
+
+
+def get_output_dir(token: str) -> Path:
+    output_dir = DATA_DIR / token
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
+
+
+def cleanup_dir(path: Path):
+    if path.exists():
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def download_audio_from_url(url: str) -> str:
     token = generate_token()
-    output_dir = DATA_DIR / token
-    output_dir.mkdir(parents=True)
-
+    output_dir = get_output_dir(token)
     output_path = str(output_dir / "audio.%(ext)s")
 
     ydl_opts = {
-        'format': 'bestaudio/best',
+        'format': 'bestaudio[ext=mp3]/bestaudio[ext=m4a]/bestaudio',
         'outtmpl': output_path,
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
@@ -35,106 +48,78 @@ def download_audio_from_url(url: str) -> str:
         }],
         'quiet': True,
         'no_warnings': True,
-        'extract_flat': False,
-        'ignoreerrors': True,
-        'no_check_certificate': True,
-        'prefer_insecure': True,
-        'retries': 10,
-        'fragment_retries': 10,
-        'skip_unavailable_fragments': True,
-        'extractor_args': {
-            'youtube': {
-                'skip': ['dash', 'hls'],
-                'player_skip': ['js', 'configs', 'webpage']
-            }
-        },
-        'format_sort': ['ext:mp3:m4a', 'quality'],
-        'format': 'bestaudio[ext=mp3]/bestaudio[ext=m4a]/bestaudio',
-        'merge_output_format': 'mp3',
-        'audioformat': 'mp3',
-        'audioquality': '192',
+        'retries': 5,
+        'fragment_retries': 5,
         'nocheckcertificate': True,
-        'no_warnings': True,
         'ignoreerrors': True,
-        'logtostderr': False,
-        'quiet': True,
-        'no_warnings': True,
         'default_search': 'auto',
-        'source_address': '0.0.0.0',
         'force_ipv4': True,
-        'cachedir': False,
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-us,en;q=0.5',
-            'Sec-Fetch-Mode': 'navigate',
-        },
-        'geo_bypass': True,
-        'geo_bypass_country': 'US',
-        'geo_bypass_ip_block': True,
-        'geo_verification_proxy': None,
-        'socket_timeout': 30,
-        'proxy': None,
-        'extract_flat': 'in_playlist',
-        'playlist_items': '1',
-        'no_playlist': True,
+        'source_address': '0.0.0.0',
+        'cachedir': False
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            try:
-                info = ydl.extract_info(url, download=False)
-                if not info or isinstance(info, bool):
-                    raise ValueError("Could not extract video info")
-                
-                if info.get('is_live'):
-                    raise ValueError("Live streams are not supported")
-                
-                ydl.download([url])
-                
-                audio_file = output_dir / "audio.mp3"
-                if not audio_file.exists():
-                    raise ValueError("Audio file was not created")
-                    
-                return token
-            except yt_dlp.utils.DownloadError as e:
-                raise ValueError(f"Download error: {str(e)}")
-            except Exception as e:
-                raise ValueError(f"Error processing video: {str(e)}")
+            info = ydl.extract_info(url, download=False)
+            if not info:
+                raise ValueError("Не удалось извлечь информацию о видео")
+
+            if info.get("is_live"):
+                raise ValueError("Live-трансляции не поддерживаются")
+
+            ydl.download([url])
+
+        audio_file = output_dir / "audio.mp3"
+        if not audio_file.exists():
+            raise FileNotFoundError("Файл audio.mp3 не создан после загрузки")
+
+        return token
+
     except Exception as e:
-        import shutil
-        if output_dir.exists():
-            shutil.rmtree(output_dir)
-        raise ValueError(f"Failed to download audio: {str(e)}")
+        cleanup_dir(output_dir)
+        logger.error(f"[download_audio_from_url] Ошибка: {e}")
+        raise ValueError(f"Не удалось скачать аудио: {e}")
 
 
 def save_uploaded_file(file_data: bytes, filename: str) -> str:
     suffix = Path(filename).suffix.lower()
     token = generate_token()
-    output_dir = DATA_DIR / token
-    output_dir.mkdir(parents=True)
+    output_dir = get_output_dir(token)
 
-    if suffix in AUDIO_EXTENSIONS:
-        # Сохраняем напрямую
-        file_path = output_dir / "audio.mp3"
-        Path(file_path).write_bytes(file_data)
-    elif suffix in VIDEO_EXTENSIONS:
-        # Сохраняем временно как video и извлекаем аудио
-        video_path = output_dir / f"input{suffix}"
-        video_path.write_bytes(file_data)
+    try:
+        if suffix in AUDIO_EXTENSIONS:
+            audio_path = output_dir / "audio.mp3"
+            audio_path.write_bytes(file_data)
 
-        audio_path = output_dir / "audio.mp3"
-        command = [
-            "ffmpeg",
-            "-i", str(video_path),
-            "-vn",  # no video
-            "-acodec", "libmp3lame",
-            "-ab", "192k",
-            str(audio_path)
-        ]
-        subprocess.run(command, check=True)
-        video_path.unlink()  # удаляем временное видео
-    else:
-        raise ValueError("Unsupported file type")
+        elif suffix in VIDEO_EXTENSIONS:
+            video_path = output_dir / f"input{suffix}"
+            video_path.write_bytes(file_data)
 
-    return token
+            audio_path = output_dir / "audio.mp3"
+            command = [
+                "ffmpeg", "-i", str(video_path),
+                "-vn", "-acodec", "libmp3lame", "-ab", "192k",
+                str(audio_path)
+            ]
+
+            result = subprocess.run(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False
+            )
+
+            if result.returncode != 0:
+                raise RuntimeError(f"FFmpeg failed: {result.stderr.decode()}")
+
+            video_path.unlink(missing_ok=True)
+
+        else:
+            raise ValueError("Неподдерживаемый формат файла")
+
+        return token
+
+    except Exception as e:
+        cleanup_dir(output_dir)
+        logger.error(f"[save_uploaded_file] Ошибка: {e}")
+        raise ValueError(f"Ошибка при сохранении файла: {e}")
