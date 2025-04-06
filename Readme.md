@@ -1,6 +1,8 @@
 # 🎧 FastAPI Audio Transcription Service
 
-A containerized FastAPI application for downloading, uploading, and transcribing audio files using services like OpenAI Whisper or RunPod (Faster-Whisper). The application supports persistent storage, token-based audio access, and secure API authentication.
+A containerized small connector FastAPI application for downloading, uploading, and transcribing audio files using services like OpenAI Whisper or RunPod (Faster-Whisper). The application supports persistent storage, token-based audio access, and secure API authentication.
+
+> 🚫 Not suitable for production
 
 ---
 
