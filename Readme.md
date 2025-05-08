@@ -1,61 +1,95 @@
 # 🎧 FastAPI Audio Transcription Service
 
-A containerized small connector FastAPI application for downloading, uploading, and transcribing audio files using services like OpenAI Whisper or RunPod (Faster-Whisper). The application supports persistent storage, token-based audio access, and secure API authentication.
+Сервис для транскрипции аудио с YouTube и других источников, а также для загруженных файлов. Поддерживает защиту от анти-бот проверок и различные провайдеры транскрипции.
 
 > 🚫 Not suitable for production
 
 ---
 
-## 🚀 Features
+## 🚀 Особенности
 
-- 🎙 Download audio from YouTube, X (Twitter), TikTok and more (via `yt-dlp`)
-- 🎧 Upload your own audio/video files and extract audio
-- 📝 Transcribe audio via:
+- 🎙 Поддержка YouTube, X (Twitter), TikTok и других сервисов через `yt-dlp`
+- 🎧 Загрузка аудио/видео файлов для транскрипции
+- 📝 Поддержка транскрипции через:
   - 🔗 [OpenAI Whisper API](https://platform.openai.com/docs/guides/speech-to-text)
   - ⚡️ [RunPod (Faster-Whisper)](https://www.runpod.io/)
-- 🗂 Persistent `/data` directory per audio token
-- 🛡 Optional `MASTER_API_TOKEN` protection
-- 🌐 Fully accessible over public internet using `ngrok`
+- 🤖 Защита от анти-бот проверок с поддержкой прокси
+- 🏎 Прямая потоковая обработка без хранения данных
+- 🛡 Опциональная защита API с помощью `MASTER_API_TOKEN`
 
 ---
 
-## ⚙️ Requirements
+## ⚙️ Требования
 
 - Docker
 - Docker Compose
-- Ngrok account (free) with `NGROK_AUTHTOKEN`
 
 ---
 
-## 📦 Installation
+## 📦 Установка
 
-Clone the repository and set up environment variables:
+Клонируйте репозиторий и настройте переменные окружения:
 
 ```bash
 cp .env.example .env
-# Edit the .env file and insert your API keys and NGROK_AUTHTOKEN
+# Отредактируйте файл .env и добавьте ваши API ключи
 ```
 
 ---
 
-## 🧪 Quick Start
+## 🧪 Быстрый старт
 
 ```bash
 docker-compose up --build
 ```
 
-This will:
-
-1. Start `ngrok` tunnel on port `8428`
-2. Automatically fetch the public URL from `ngrok`
-3. Inject the public URL into `.env` (`PUBLIC_BASE_URL`)
-4. Start FastAPI app on `localhost:8428`, publicly available via `ngrok`
+Сервис будет доступен по адресу `http://localhost:8428`
 
 ---
 
-## 🔐 API Token Authentication
+## 🤖 Защита от анти-бот проверок
 
-If `MASTER_API_TOKEN` is set in `.env`, all requests **must** include this header:
+YouTube и другие сервисы применяют анти-бот проверки, которые могут блокировать скачивание. Эта версия включает меры, которые помогают обойти такие ограничения:
+
+### Настройка прокси
+
+В файле `.env` можно указать прокси-сервер:
+
+```env
+PROXY=http://user:pass@host:port
+# или
+PROXY=socks5://user:pass@host:port
+```
+
+### Рекомендации по прокси:
+
+1. **Жилые IP**: Используйте "жилые" (residential) IP-адреса, так как они вызывают меньше подозрений.
+2. **Геолокация**: Выбирайте прокси из тех же регионов, что и контент, который вы скачиваете.
+3. **Ротация**: Используйте прокси с ротацией IP для избежания блокировок.
+4. **Провайдеры прокси**:
+   - [Bright Data](https://brightdata.com/) - высококачественные residential прокси
+   - [Oxylabs](https://oxylabs.io/) - большой выбор residential и datacenter прокси
+   - [IPRoyal](https://iproyal.com/) - доступное решение с residential IP
+
+### User-Agent и Cookies
+
+Для еще большей защиты можно указать собственный User-Agent и файл с cookies:
+
+```env
+USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36
+COOKIES_FILE=/path/to/cookies.txt
+```
+
+Чтобы получить cookies с YouTube:
+1. Войдите в свой YouTube аккаунт через браузер
+2. Используйте расширение типа "Cookie-Editor" для экспорта cookies
+3. Сохраните файл в формате NETSCAPE или JSON
+
+---
+
+## 🔐 Аутентификация API
+
+Если в файле `.env` установлена переменная `MASTER_API_TOKEN`, все запросы должны включать следующий заголовок:
 
 ```http
 x-api-token: YOUR_SECRET_TOKEN
@@ -65,97 +99,94 @@ x-api-token: YOUR_SECRET_TOKEN
 
 ## 📡 API Endpoints
 
-### `POST /download`
-Download audio from video URL
+### `POST /transcribe/url`
+Скачивает аудио с URL (например, YouTube) и сразу возвращает транскрипцию
 
+**Параметры:**
 ```json
 {
   "url": "https://www.youtube.com/watch?v=..."
 }
 ```
 
-**Returns:**
+**Возвращает:**
 ```json
 {
-  "token": "abc123",
-  "download_url": "/audio/abc123"
+  "output": {
+    "transcription": "текст транскрипции...",
+    "model": "whisper-1",
+    "provider": "openai"
+  },
+  "status": "COMPLETED"
 }
 ```
 
 ---
 
-### `POST /upload`
-Upload audio/video file and save as `.mp3`
+### `POST /transcribe/file`
+Принимает загруженный аудио/видео файл, обрабатывает его и сразу возвращает транскрипцию
 
-**Form Data:**
-- `file`: upload `.mp3`, `.wav`, `.mp4`, etc.
+**Форма:**
+- `file`: загрузите `.mp3`, `.wav`, `.mp4` и т.д.
 
----
-
-### `GET /audio/{token}`
-Download audio file by token
-
----
-
-### `GET /transcribe/{token}?force=true`
-Transcribe audio by token using the selected provider (`OpenAI` or `RunPod`)
-
-- If transcription exists → returns `.txt`
-- If not → calls external API and caches the result
-- `force=true` re-generates transcription
+**Возвращает:**
+```json
+{
+  "output": {
+    "transcription": "текст транскрипции...",
+    "model": "whisper-1",
+    "provider": "openai"
+  },
+  "status": "COMPLETED"
+}
+```
 
 ---
 
-## ⚙️ Configuration (`.env`)
+## ⚙️ Конфигурация (`.env`)
 
-| Variable            | Description                                    |
-|---------------------|------------------------------------------------|
-| `NGROK_AUTHTOKEN`   | Your ngrok account token                       |
-| `PUBLIC_BASE_URL`   | Overwritten automatically on startup           |
-| `RUNPOD_API_KEY`    | API key for RunPod (Faster-Whisper)           |
-| `RUNPOD_API_URL`    | RunPod endpoint URL                            |
-| `OPENAI_API_KEY`    | OpenAI API key                                 |
-| `USE_OPENAI`        | `true` to use OpenAI Whisper, else RunPod      |
-| `MASTER_API_TOKEN`  | If set, enables API token authentication       |
+| Переменная         | Описание                                     |
+|--------------------|----------------------------------------------|
+| `RUNPOD_API_KEY`   | API ключ для RunPod (Faster-Whisper)        |
+| `RUNPOD_API_URL`   | URL эндпоинта RunPod                        |
+| `OPENAI_API_KEY`   | API ключ OpenAI                             |
+| `USE_OPENAI`       | `true` для использования OpenAI Whisper     |
+| `MASTER_API_TOKEN` | Если указан, включает защиту API            |
+| `PROXY`            | HTTP или SOCKS5 прокси для yt-dlp           |
+| `USER_AGENT`       | Пользовательский User-Agent                 |
+| `COOKIES_FILE`     | Путь к файлу с cookies                      |
 
 ---
 
+### 🔧 Настройка OpenAI Whisper
 
-### 🔧 OpenAI Whisper Configuration
+Для использования официальной модели OpenAI Whisper:
 
-To use the official OpenAI Whisper model for transcription:
-
-1. Go to [https://platform.openai.com/account/api-keys](https://platform.openai.com/account/api-keys)
-2. Create a new API key and set it in your `.env`:
+1. Перейдите на страницу [https://platform.openai.com/account/api-keys](https://platform.openai.com/account/api-keys)
+2. Создайте новый API ключ и добавьте его в файл `.env`:
 
 ```env
 USE_OPENAI=true
 OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxx
 ```
 
-3. The app will now use OpenAI Whisper (`whisper-1`) for transcription via:
-
-```
-POST https://api.openai.com/v1/audio/transcriptions
-```
-
-> ⚠️ Note: OpenAI charges per minute of transcription. See pricing: https://openai.com/pricing
+> ⚠️ OpenAI взимает плату за каждую минуту транскрипции. Подробнее о ценах: https://openai.com/pricing
 
 ---
 
-### ⚡ RunPod (Faster-Whisper) Configuration
+### ⚡ Настройка RunPod (Faster-Whisper)
 
-To use a **serverless Faster-Whisper endpoint** hosted on [RunPod.io](https://www.runpod.io):
+Для использования **серверлесс Faster-Whisper endpoint** на [RunPod.io](https://www.runpod.io):
 
-> Faster-Whisper runpod worker repo: [link](https://github.com/runpod-workers/worker-faster_whisper)
+> Репозиторий с Faster-Whisper для RunPod: [link](https://github.com/runpod-workers/worker-faster_whisper)
 
-1. Sign up at [https://www.runpod.io/](https://www.runpod.io/)
-2. Go to **"Serverless > Templates"** and search for `faster-whisper` or `whisper-api`
-3. Deploy a **Serverless vLLM Endpoint**
-4. Once deployed:
-   - Copy your **API endpoint URL**
-   - Copy your **API Key**
-5. In your `.env` file:
+1. Зарегистрируйтесь на [https://www.runpod.io/](https://www.runpod.io/)
+2. Перейдите в **"Serverless > Templates"** и найдите `faster-whisper` или `whisper-api`
+3. Разверните **Serverless vLLM Endpoint**
+4. После развертывания:
+   - Скопируйте ваш **API endpoint URL**
+   - Скопируйте ваш **API Key**
+5. В файле `.env`:
 
 ```env
 USE_OPENAI=false
@@ -163,25 +194,10 @@ RUNPOD_API_KEY=your-runpod-api-key
 RUNPOD_API_URL=https://api.runpod.ai/v2/<your-endpoint-id>/run
 ```
 
-> 💡 Make sure to **top up your RunPod balance** to avoid errors or failed jobs.
-
-When this configuration is active, the app sends transcription requests like this:
-
-```json
-POST https://api.runpod.ai/v2/<your-endpoint-id>/run
-Authorization: Bearer <RUNPOD_API_KEY>
-{
-  "input": {
-    "prompt": "<PUBLIC AUDIO URL>"
-  }
-}
-```
-
-The response is parsed and cached in `.txt` per token.
+> 💡 Убедитесь, что на вашем счете RunPod достаточно средств.
 
 ---
 
+## 🧊 Лицензия
 
-## 🧊 License
-
-MIT — use freely and modify to fit your needs.
+MIT — используйте свободно и изменяйте под свои нужды.

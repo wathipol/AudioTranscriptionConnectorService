@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Аудио Транскрипция</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { padding: 2rem; background-color: #f8f9fa; }
+        #transcriptionResult { 
+            white-space: pre-wrap; 
+            background: #fff; 
+            padding: 1rem; 
+            border: 1px solid #dee2e6; 
+            border-radius: 0.5rem;
+            min-height: 200px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .status-indicator {
+            display: none;
+            margin-top: 1rem;
+        }
+        .progress {
+            height: 20px;
+        }
+        .error-message {
+            color: #dc3545;
+            margin-top: 1rem;
+        }
+        #apiTokenModal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+        }
+        .advanced-options {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid #dee2e6;
+        }
+        .advanced-toggle {
+            cursor: pointer;
+            color: #0d6efd;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1 class="mb-4">Транскрипция Аудио</h1>
+
+    {% if auth_required %}
+    <div id="apiTokenModal" style="display: flex;">
+        <div class="modal-content">
+            <h4 class="mb-3">Введите API ключ</h4>
+            <div class="mb-3">
+                <input type="text" class="form-control" id="modalApiToken" placeholder="Ваш API ключ">
+            </div>
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="rememberToken" checked>
+                <label class="form-check-label" for="rememberToken">Запомнить токен</label>
+            </div>
+            <button class="btn btn-primary" id="saveTokenBtn">Сохранить</button>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Выберите источник</h5>
+            <div class="mb-3">
+                <select class="form-select" id="inputType">
+                    <option value="file">Загрузить файл</option>
+                    <option value="url">Из URL видео</option>
+                </select>
+            </div>
+
+            <div class="mb-3" id="fileInput">
+                <label for="file" class="form-label">Выберите аудио/видео файл</label>
+                <input class="form-control" type="file" id="file" accept="audio/*,video/*">
+            </div>
+
+            <div class="mb-3 d-none" id="urlInput">
+                <label for="videoUrl" class="form-label">Введите URL видео</label>
+                <input class="form-control" type="text" id="videoUrl" placeholder="https://www.youtube.com/watch?v=...">
+            </div>
+
+            <div class="advanced-toggle" id="advancedToggle">
+                ▼ Показать дополнительные параметры
+            </div>
+
+            <div class="advanced-options d-none" id="advancedOptions">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="model" class="form-label">Модель</label>
+                        <select class="form-select" id="model">
+                            <option value="">Автоматически</option>
+                            <optgroup label="RunPod модели">
+                                {% for model in runpod_models %}
+                                <option value="{{ model }}">{{ model }}</option>
+                                {% endfor %}
+                            </optgroup>
+                            <optgroup label="OpenAI модели">
+                                {% for model in openai_models %}
+                                <option value="{{ model }}">{{ model }}</option>
+                                {% endfor %}
+                            </optgroup>
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="language" class="form-label">Язык</label>
+                        <select class="form-select" id="language">
+                            <option value="">Автоматически</option>
+                            <option value="ru">Русский</option>
+                            <option value="en">Английский</option>
+                            <option value="uk">Украинский</option>
+                            <option value="de">Немецкий</option>
+                            <option value="fr">Французский</option>
+                            <option value="es">Испанский</option>
+                            <option value="it">Итальянский</option>
+                            <option value="ja">Японский</option>
+                            <option value="zh">Китайский</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="transcriptionFormat" class="form-label">Формат транскрипции</label>
+                        <select class="form-select" id="transcriptionFormat">
+                            {% for format in transcription_formats %}
+                            <option value="{{ format }}">{{ format }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="responseFormat" class="form-label">Формат ответа</label>
+                        <select class="form-select" id="responseFormat">
+                            <option value="">По умолчанию</option>
+                            <option value="text">Текст</option>
+                            <option value="json">JSON</option>
+                            <option value="verbose_json">Подробный JSON</option>
+                            <option value="srt">SRT</option>
+                            <option value="vtt">VTT</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="temperature" class="form-label">Температура (0.0 - 1.0)</label>
+                        <input type="number" class="form-control" id="temperature" placeholder="0.0" min="0" max="1" step="0.1">
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <label for="prompt" class="form-label">Промпт</label>
+                        <textarea class="form-control" id="prompt" rows="2" placeholder="Подсказка для модели..."></textarea>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <label for="initialPrompt" class="form-label">Начальный промпт</label>
+                        <textarea class="form-control" id="initialPrompt" rows="2" placeholder="Начальный контекст для модели..."></textarea>
+                    </div>
+                </div>
+
+                <div class="row mt-2">
+                    <div class="col-md-4 mb-2">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="translate" value="true">
+                            <label class="form-check-label" for="translate">Перевод на английский</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="enableVad" value="true" checked>
+                            <label class="form-check-label" for="enableVad">Обнаружение голоса (VAD)</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="wordTimestamps" value="true">
+                            <label class="form-check-label" for="wordTimestamps">Временные метки слов</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button class="btn btn-primary mt-3" id="processBtn">Транскрибировать</button>
+
+            {% if auth_required %}
+            <div class="mt-3">
+                <button class="btn btn-sm btn-outline-secondary" id="changeTokenBtn">Изменить API ключ</button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <h5 class="card-title">Результат транскрипции</h5>
+            <div class="status-indicator" id="statusIndicator">
+                <div class="progress mb-2">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                </div>
+                <p class="text-muted mb-0" id="statusText">Обработка...</p>
+            </div>
+            <div class="error-message" id="errorMessage"></div>
+            <div id="transcriptionResult"></div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script>
+    const inputType = document.getElementById('inputType');
+    const fileInput = document.getElementById('fileInput');
+    const urlInput = document.getElementById('urlInput');
+    const statusIndicator = document.getElementById('statusIndicator');
+    const statusText = document.getElementById('statusText');
+    const errorMessage = document.getElementById('errorMessage');
+    const transcriptionResult = document.getElementById('transcriptionResult');
+    const processBtn = document.getElementById('processBtn');
+    const apiTokenStorageKey = 'audio_transcription_api_token';
+    const advancedToggle = document.getElementById('advancedToggle');
+    const advancedOptions = document.getElementById('advancedOptions');
+
+    // Переключение дополнительных параметров
+    advancedToggle.addEventListener('click', () => {
+        const isHidden = advancedOptions.classList.contains('d-none');
+        advancedOptions.classList.toggle('d-none', !isHidden);
+        advancedToggle.innerHTML = isHidden 
+            ? '▲ Скрыть дополнительные параметры'
+            : '▼ Показать дополнительные параметры';
+    });
+
+    // Состояние токена
+    let apiToken = localStorage.getItem(apiTokenStorageKey) || "";
+    
+    {% if auth_required %}
+    const apiTokenModal = document.getElementById('apiTokenModal');
+    const modalApiToken = document.getElementById('modalApiToken');
+    const saveTokenBtn = document.getElementById('saveTokenBtn');
+    const changeTokenBtn = document.getElementById('changeTokenBtn');
+    const rememberToken = document.getElementById('rememberToken');
+    
+    // Проверяем, есть ли сохраненный токен
+    if (apiToken) {
+        apiTokenModal.style.display = 'none';
+    }
+    
+    saveTokenBtn.addEventListener('click', () => {
+        apiToken = modalApiToken.value.trim();
+        if (apiToken) {
+            if (rememberToken.checked) {
+                localStorage.setItem(apiTokenStorageKey, apiToken);
+            }
+            apiTokenModal.style.display = 'none';
+        } else {
+            alert('Пожалуйста, введите API ключ');
+        }
+    });
+    
+    changeTokenBtn.addEventListener('click', () => {
+        modalApiToken.value = apiToken;
+        apiTokenModal.style.display = 'flex';
+    });
+    {% endif %}
+
+    inputType.addEventListener('change', () => {
+        fileInput.classList.toggle('d-none', inputType.value !== 'file');
+        urlInput.classList.toggle('d-none', inputType.value !== 'url');
+    });
+
+    function showError(message, details = '') {
+        errorMessage.innerHTML = `
+            <div class="alert alert-danger">
+                <strong>Ошибка:</strong> ${message}
+                ${details ? `<br><small class="text-muted">${details}</small>` : ''}
+            </div>
+        `;
+        errorMessage.style.display = 'block';
+        statusIndicator.style.display = 'none';
+    }
+
+    function showStatus(message) {
+        statusText.textContent = message;
+        statusIndicator.style.display = 'block';
+        errorMessage.style.display = 'none';
+    }
+
+    function clearStatus() {
+        statusIndicator.style.display = 'none';
+        errorMessage.style.display = 'none';
+    }
+
+    function getErrorMessage(error) {
+        if (error.response) {
+            const status = error.response.status;
+            const data = error.response.data;
+            
+            console.error('API Error:', {
+                status,
+                data,
+                headers: error.response.headers
+            });
+            
+            switch (status) {
+                case 422:
+                    return `Некорректные входные данные: ${typeof data.detail === 'string' ? data.detail : JSON.stringify(data)}`;
+                case 413:
+                    return 'Файл слишком большой. Пожалуйста, попробуйте файл меньшего размера.';
+                case 415:
+                    return 'Неподдерживаемый тип файла. Пожалуйста, используйте аудио или видео файлы.';
+                case 401:
+                    return 'Требуется аутентификация. Пожалуйста, проверьте ваш API ключ.';
+                case 403:
+                    return 'Доступ запрещен. Пожалуйста, проверьте ваш API ключ.';
+                default:
+                    return `Ошибка сервера (${status}): ${typeof data.detail === 'string' ? data.detail : JSON.stringify(data)}`;
+            }
+        }
+        console.error('Network Error:', error);
+        return error.message || 'Произошла неизвестная ошибка';
+    }
+
+    // Сбор всех параметров транскрипции
+    function getTranscriptionParams() {
+        const params = {};
+        
+        // Получаем базовые параметры
+        const modelValue = document.getElementById('model').value;
+        const languageValue = document.getElementById('language').value;
+        const transcriptionFormatValue = document.getElementById('transcriptionFormat').value;
+        const responseFormatValue = document.getElementById('responseFormat').value;
+        const temperatureValue = document.getElementById('temperature').value;
+        const promptValue = document.getElementById('prompt').value.trim();
+        const initialPromptValue = document.getElementById('initialPrompt').value.trim();
+        
+        // Получаем переключатели
+        const translateValue = document.getElementById('translate').checked;
+        const enableVadValue = document.getElementById('enableVad').checked;
+        const wordTimestampsValue = document.getElementById('wordTimestamps').checked;
+        
+        // Добавляем параметры только если они имеют значения
+        if (modelValue) params.model = modelValue;
+        if (languageValue) params.language = languageValue;
+        if (transcriptionFormatValue) params.transcription_format = transcriptionFormatValue;
+        if (responseFormatValue) params.response_format = responseFormatValue;
+        if (temperatureValue) params.temperature = parseFloat(temperatureValue);
+        if (promptValue) params.prompt = promptValue;
+        if (initialPromptValue) params.initial_prompt = initialPromptValue;
+        
+        // Добавляем булевы параметры
+        params.translate = translateValue;
+        params.enable_vad = enableVadValue;
+        params.word_timestamps = wordTimestampsValue;
+        
+        return params;
+    }
+
+    processBtn.addEventListener('click', async () => {
+        {% if auth_required %}
+        if (!apiToken && apiTokenModal.style.display !== 'flex') {
+            apiTokenModal.style.display = 'flex';
+            return;
+        }
+        {% endif %}
+
+        clearStatus();
+        showStatus('Обработка запроса...');
+        transcriptionResult.textContent = '';
+        
+        const headers = apiToken ? { 'x-api-token': apiToken } : {};
+
+        try {
+            const transcriptionParams = getTranscriptionParams();
+            
+            if (inputType.value === 'file') {
+                const file = document.getElementById('file').files[0];
+                if (!file) {
+                    showError('Пожалуйста, выберите файл.');
+                    return;
+                }
+
+                // Проверка размера файла (max 100MB)
+                if (file.size > 100 * 1024 * 1024) {
+                    showError('Файл слишком большой.', 'Максимальный размер файла 100MB.');
+                    return;
+                }
+
+                showStatus('Загрузка и транскрибирование файла...');
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                // Добавляем все параметры транскрипции в formData
+                Object.entries(transcriptionParams).forEach(([key, value]) => {
+                    formData.append(key, value);
+                });
+                
+                try {
+                    const transcriptionRes = await axios.post('/transcribe/file', formData, { 
+                        headers,
+                        maxContentLength: 100 * 1024 * 1024,
+                        maxBodyLength: 100 * 1024 * 1024
+                    });
+                    
+                    if (transcriptionRes.data && transcriptionRes.data.output) {
+                        transcriptionResult.textContent = transcriptionRes.data.output.transcription;
+                    } else {
+                        transcriptionResult.textContent = JSON.stringify(transcriptionRes.data, null, 2);
+                    }
+                    clearStatus();
+                } catch (error) {
+                    throw new Error(`Ошибка транскрибирования: ${getErrorMessage(error)}`);
+                }
+            } else {
+                const url = document.getElementById('videoUrl').value.trim();
+                if (!url) {
+                    showError('Пожалуйста, введите URL видео.');
+                    return;
+                }
+
+                // Проверка формата URL
+                try {
+                    new URL(url);
+                } catch (e) {
+                    showError('Некорректный формат URL.', 'Пожалуйста, введите корректный URL, начинающийся с http:// или https://');
+                    return;
+                }
+
+                showStatus('Скачивание и транскрибирование видео...');
+                try {
+                    // Создаем объект данных для отправки на сервер
+                    const requestData = {
+                        url: url,
+                        ...transcriptionParams
+                    };
+                    
+                    const transcriptionRes = await axios.post('/transcribe/url', requestData, {
+                        headers
+                    });
+                    
+                    if (transcriptionRes.data && transcriptionRes.data.output) {
+                        transcriptionResult.textContent = transcriptionRes.data.output.transcription;
+                    } else {
+                        transcriptionResult.textContent = JSON.stringify(transcriptionRes.data, null, 2);
+                    }
+                    clearStatus();
+                } catch (error) {
+                    console.error('Transcription error full details:', error);
+                    console.error('Transcription error response:', error.response?.data);
+                    throw new Error(`Ошибка транскрибирования: ${getErrorMessage(error)}`);
+                }
+            }
+        } catch (err) {
+            console.error(err);
+            showError(err.message);
+        }
+    });
+</script>
+</body>
+</html> 

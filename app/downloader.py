@@ -1,125 +1,184 @@
-import uuid
-import shutil
+import base64
 import logging
+import shutil
 from pathlib import Path
-from typing import Optional
+import subprocess
+import tempfile
+import os
+import uuid
 
 import yt_dlp
-import subprocess
-
 from app.config import config
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path(config.data_dir)
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-
+# Определяем поддерживаемые расширения
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".mkv", ".mov"}
 
 
-def generate_token() -> str:
-    return uuid.uuid4().hex
-
-
-def get_output_dir(token: str) -> Path:
-    output_dir = DATA_DIR / token
-    output_dir.mkdir(parents=True, exist_ok=True)
-    return output_dir
-
-
-def cleanup_dir(path: Path):
-    if path.exists():
-        shutil.rmtree(path, ignore_errors=True)
-
-
 def download_audio_from_url(url: str) -> str:
-    token = generate_token()
-    output_dir = get_output_dir(token)
-    output_path = str(output_dir / "audio.%(ext)s")
-
-    ydl_opts = {
-        'format': 'bestaudio[ext=mp3]/bestaudio[ext=m4a]/bestaudio',
-        'outtmpl': output_path,
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        'quiet': True,
-        'no_warnings': True,
-        'retries': 5,
-        'fragment_retries': 5,
-        'nocheckcertificate': True,
-        'ignoreerrors': True,
-        'default_search': 'auto',
-        'force_ipv4': True,
-        'source_address': '0.0.0.0',
-        'cachedir': False
-    }
-
+    """
+    Скачивает аудио с URL (например, YouTube) и возвращает его в формате base64
+    """
+    temp_dir = tempfile.mkdtemp()
+    temp_file_name = os.path.join(temp_dir, "audio")
+    
     try:
+        # Сначала скачиваем лучшее аудио без постобработки
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': temp_file_name,
+            # Отключаем постобработку - сами сделаем конвертацию через ffmpeg
+            'postprocessors': [],
+            'noplaylist': True,
+            'quiet': False,
+            'no_warnings': False,
+            'retries': 5,
+            'fragment_retries': 5,
+            'nocheckcertificate': True,
+            'ignoreerrors': False
+        }
+        
+        # Добавляем прокси, если указан
+        if config.proxy:
+            ydl_opts['proxy'] = config.proxy
+        
+        # Настраиваем User-Agent
+        ydl_opts['http_headers'] = {
+            'User-Agent': config.user_agent
+        }
+        
+        # Добавляем cookies, если файл указан
+        if config.cookies_file and os.path.exists(config.cookies_file):
+            ydl_opts['cookiefile'] = config.cookies_file
+
+        # Скачиваем файл с YouTube
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+            info = ydl.extract_info(url, download=True)
+            
             if not info:
-                raise ValueError("Не удалось извлечь информацию о видео")
-
-            if info.get("is_live"):
-                raise ValueError("Live-трансляции не поддерживаются")
-
-            ydl.download([url])
-
-        audio_file = output_dir / "audio.mp3"
-        if not audio_file.exists():
-            raise FileNotFoundError("Файл audio.mp3 не создан после загрузки")
-
-        return token
-
+                raise ValueError("Не удалось получить информацию о видео")
+                
+            # Получаем путь к скачанному файлу
+            if 'requested_downloads' in info and info['requested_downloads']:
+                downloaded_file = info['requested_downloads'][0]['filepath']
+            else:
+                # Находим любые скачанные файлы
+                downloaded_files = [os.path.join(temp_dir, f) for f in os.listdir(temp_dir)]
+                if not downloaded_files:
+                    raise ValueError("Не удалось найти скачанный файл")
+                downloaded_file = downloaded_files[0]
+        
+        logger.info(f"Файл скачан: {downloaded_file}")
+        
+        # Теперь конвертируем скачанный файл в mp3 через ffmpeg напрямую
+        output_file = os.path.join(temp_dir, "audio.mp3")
+        
+        # Запускаем ffmpeg для конвертации без ffprobe
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", downloaded_file,
+            "-vn",                      # Убираем видео
+            "-acodec", "libmp3lame",    # Используем mp3 кодек
+            "-ab", "192k",              # Битрейт
+            "-ar", "44100",             # Частота дискретизации
+            "-ac", "2",                 # Два канала (стерео)
+            "-f", "mp3",                # Формат файла
+            output_file
+        ]
+        
+        logger.info(f"Запускаем конвертацию: {' '.join(cmd)}")
+        
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False
+        )
+        
+        if result.returncode != 0:
+            error = result.stderr.decode()
+            logger.error(f"Ошибка ffmpeg: {error}")
+            raise ValueError(f"Ошибка конвертации аудио: {error}")
+            
+        # Проверяем, что файл создан
+        if not os.path.exists(output_file) or os.path.getsize(output_file) == 0:
+            raise ValueError("Файл не был создан или пустой")
+            
+        # Читаем файл и конвертируем в base64
+        with open(output_file, 'rb') as f:
+            audio_data = f.read()
+            base64_audio = base64.b64encode(audio_data).decode('utf-8')
+            
+        return base64_audio
+        
     except Exception as e:
-        cleanup_dir(output_dir)
         logger.error(f"[download_audio_from_url] Ошибка: {e}")
         raise ValueError(f"Не удалось скачать аудио: {e}")
+    finally:
+        # Удаляем временную директорию со всеми файлами
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-def save_uploaded_file(file_data: bytes, filename: str) -> str:
+def process_uploaded_file(file_data: bytes, filename: str) -> str:
+    """
+    Обрабатывает загруженный аудио/видео файл и возвращает аудио в формате base64
+    """
     suffix = Path(filename).suffix.lower()
-    token = generate_token()
-    output_dir = get_output_dir(token)
-
+    temp_dir = tempfile.mkdtemp()
+    input_file = os.path.join(temp_dir, f"input{suffix}")
+    output_file = os.path.join(temp_dir, "output.mp3")
+    
     try:
-        if suffix in AUDIO_EXTENSIONS:
-            audio_path = output_dir / "audio.mp3"
-            audio_path.write_bytes(file_data)
-
-        elif suffix in VIDEO_EXTENSIONS:
-            video_path = output_dir / f"input{suffix}"
-            video_path.write_bytes(file_data)
-
-            audio_path = output_dir / "audio.mp3"
-            command = [
-                "ffmpeg", "-i", str(video_path),
-                "-vn", "-acodec", "libmp3lame", "-ab", "192k",
-                str(audio_path)
+        # Сохраняем входной файл
+        with open(input_file, 'wb') as f:
+            f.write(file_data)
+        
+        if suffix in AUDIO_EXTENSIONS or suffix in VIDEO_EXTENSIONS:
+            # Конвертируем файл в mp3
+            cmd = [
+                "ffmpeg", "-y", 
+                "-i", input_file,
+                "-vn",                      # Убираем видео
+                "-acodec", "libmp3lame",    # Используем mp3 кодек
+                "-ab", "192k",              # Битрейт
+                "-ar", "44100",             # Частота дискретизации
+                "-ac", "2",                 # Два канала (стерео)
+                "-f", "mp3",                # Формат файла
+                output_file
             ]
-
+            
+            logger.info(f"Запускаем конвертацию: {' '.join(cmd)}")
+            
             result = subprocess.run(
-                command,
+                cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 check=False
             )
-
+            
             if result.returncode != 0:
-                raise RuntimeError(f"FFmpeg failed: {result.stderr.decode()}")
-
-            video_path.unlink(missing_ok=True)
-
+                error = result.stderr.decode()
+                logger.error(f"Ошибка ffmpeg: {error}")
+                raise ValueError(f"Ошибка конвертации аудио: {error}")
         else:
             raise ValueError("Неподдерживаемый формат файла")
-
-        return token
-
+            
+        # Проверяем, что файл создан
+        if not os.path.exists(output_file) or os.path.getsize(output_file) == 0:
+            raise ValueError("Файл не был создан или пустой")
+            
+        # Читаем файл и конвертируем в base64
+        with open(output_file, 'rb') as f:
+            audio_data = f.read()
+            base64_audio = base64.b64encode(audio_data).decode('utf-8')
+            
+        return base64_audio
+            
     except Exception as e:
-        cleanup_dir(output_dir)
-        logger.error(f"[save_uploaded_file] Ошибка: {e}")
-        raise ValueError(f"Ошибка при сохранении файла: {e}")
+        logger.error(f"[process_uploaded_file] Ошибка: {e}")
+        raise ValueError(f"Ошибка при обработке файла: {e}")
+    finally:
+        # Удаляем временную директорию со всеми файлами
+        shutil.rmtree(temp_dir, ignore_errors=True)
